@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<modDesc descVersion="61">
+    <author>900Hasse</author>
+	<version>1.1.0.0</version>
+	<title>
+        <en>REA22 Dynamic Dirt</en>
+    </title>
+    <description>
+        <en>
+<![CDATA[The goal of this mod is to make the game feel more realistic.
+The goal is to make the mod universal.
+This mod supports multiplayer and dedicated servers.
+
+This mod creates puddles in low places where water will fill up if ground is wet.
+
+1.1.0.0
+Water does not use ground wetness to set water level.
+Rain now increase level.
+Cloudy and sunny weathers lowers water level, lower temperatures decrease speed.
+]]>
+</en>
+<de>
+<![CDATA[Das Ziel dieses Mods ist es, das Spiel realistischer wirken zu lassen.
+Das Ziel ist es, den Mod universell zu machen.
+Dieser Mod unterstützt Multiplayer und dedizierte Server.
+
+Dieser Mod erzeugt Pfützen an niedrigen Stellen, an denen sich Wasser füllt, wenn der Boden nass ist.]]>
+</de>
+<fr>
+<![CDATA[The goal of this mod is to make the game feel more realistic.
+The goal is to make the mod universal.
+This mod supports multiplayer and dedicated servers.
+
+This mod creates puddles in low places where water will fill up if ground is wet.]]>
+</fr>
+    </description>
+	<l10n>
+	</l10n>
+    <iconFilename>icon_READynamicDirt.dds</iconFilename>
+	<multiplayer supported="true" />
+    <extraSourceFiles>
+        <sourceFile filename="READynamicDirt.lua" />
+    </extraSourceFiles>
+</modDesc>

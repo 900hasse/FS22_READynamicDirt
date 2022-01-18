@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<CustomShader version="5">
+    <Parameters/>
+    <UvUsages/>
+    <Textures>
+        <Texture name = "mSparklesNormal" defaultColorProfile = "linearRGB" defaultFilename = "$data/shared/sparkles_normal.png"/>
+    </Textures>
+    <Variations>
+        <Variation name = "icicle" groups="base">
+<![CDATA[
+    #define ICICLE
+]]>
+        </Variation>
+    </Variations>
+    <VertexAttributes>
+        <VertexAttribute name="color" group="base"/>
+    </VertexAttributes>
+    <LodLevel startDistance="0">
+        <CodeInjections>
+            <CodeInjection position="CONFIG_DEFINES">
+<![CDATA[
+#if GPU_PROFILE >= GPU_PROFILE_HIGH
+    #if !defined(ICICLE)
+        #define SPARKLES_SPECULAR
+    #endif
+    #define SUBSURFACE_SCATTERING
+#endif
+]]>
+            </CodeInjection>
+            <CodeInjection position = "SAMPLERS">
+<![CDATA[
+sampler2D mSparklesNormal;
+]]>
+            </CodeInjection>
+            <CodeInjection position="VS_END">
+<![CDATA[
+    if (cShared4 < 1){
+        Out.position = float4(0,0,0,-1); // hide the vertices 
+    }
+]]>
+            </CodeInjection>
+            <CodeInjection position="GET_POSITION_VS">
+<![CDATA[
+// Season states:
+// cShared3 = 0 = summer
+// cShared3 = 1 = autumn
+// cShared3 = 2 = winter
+// cShared3 = 3 = spring
+// cShared3 = 4 = summer
+// cShared4 = 0 .. 1 = snow control
+    float snowLevel = min(cShared4 / 5.0, 1);
+    float mTransition = 1 - snowLevel*snowLevel; // pow(cShared4,3);
+    float3 mDeformedPosition = In.position.xyz + (2*In.color.rgb - 1)*mTransition;
+    return mDeformedPosition.xyz;
+]]>
+            </CodeInjection>
+            <CodeInjection position="LIB_FUNCTION_FS">
+<![CDATA[
+// custom getNormal function
+float3 mGetNormal(FS_INPUT In, FS_GLOBALS globals, ObjectParameters& object, float3 mNormal){
+    float3 tangentSpaceNormal = In.vs.worldNormal.xyz;
+    float3 tangentSpaceTangent = In.vs.worldTangent.xyz;
+    float3 tangentSpaceBitangent = cross(tangentSpaceNormal, tangentSpaceTangent)*In.vs.worldTangent.w;
+    float3x3 worldToTangentSpaceMat = float3x3(tangentSpaceTangent, tangentSpaceBitangent, tangentSpaceNormal);
+    return normalize(mul(mNormal.xyz, worldToTangentSpaceMat).xyz);
+}
+]]>
+            </CodeInjection>
+            <CodeInjection position = "FS_GLOBALS">
+<![CDATA[
+#if defined( SPARKLES_SPECULAR )
+    float3 gSparklesNormal;
+    float  gSparklesRoughness;
+#endif
+#if defined( SUBSURFACE_SCATTERING )
+    float3 gSubsurfColor;
+    float  gSubsurfThickness;
+#endif
+]]>
+            </CodeInjection>
+            <CodeInjection position = "START_FS">
+<![CDATA[
+#if defined( SPARKLES_SPECULAR )
+    float3 mNormal1 = tex2D(mSparklesNormal, 2.5*NORMAL_MAP_TEXCOORDS).xyz - 0.5;
+    float3 mNormal2 = tex2D(mSparklesNormal, 5.0*NORMAL_MAP_TEXCOORDS).xyz - 0.5;
+    globals.gSparklesNormal    = mGetNormal(In, globals, object, mNormal1+mNormal2);
+    globals.gSparklesRoughness = 0.25;
+#endif
+#if defined( SUBSURFACE_SCATTERING )
+    globals.gSubsurfColor = float3(0.6871,0.9743,1.0000);
+    globals.gSubsurfThickness = 0.2;
+#endif
+]]>
+            </CodeInjection>
+            <CodeInjection position="POST_GET_LIGHTING_FS">
+ <![CDATA[
+ #if defined( SPARKLES_SPECULAR )
+    // Sparkling extra specular
+    float  mFresnelStrength   = lerp(1, 0.3, globals.gSparklesRoughness*globals.gSparklesRoughness);
+    float3 mSparklesSpecular = getSpecularShading(In, globals, object, lightDir, viewDir, globals.gSparklesNormal, diffuseColor, specularColor, globals.gSparklesRoughness, mFresnelStrength);
+    lighting = (atten*NdotL) * (diffuseShading + specularShading + mSparklesSpecular) * lightColor;
+#endif
+#if defined( SUBSURFACE_SCATTERING )
+    float fLTAmbient =      0.15;
+    float fLTPower =        2.0;
+    float fLTDistortion =   1.0;
+    float fLTScale =        2.0;
+    float fLightAttenuation = saturate(dot(normal, lightDir)) + saturate(dot(viewDir, -lightDir));
+    float3 vLTLight = lightDir + normal * fLTDistortion;
+    float fLTDot = pow(saturate(dot(viewDir, -vLTLight)), fLTPower) * fLTScale;
+    float fLT = fLightAttenuation * (fLTDot + fLTAmbient) * globals.gSubsurfThickness;
+    float3 cLT = diffuseColor * lightColor * fLT * globals.gSubsurfColor.rgb;
+    lighting.xyz += cLT * lightAtten;
+#endif
+]]>
+            </CodeInjection>
+        </CodeInjections>
+    </LodLevel>
+</CustomShader>

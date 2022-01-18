@@ -1,0 +1,628 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+
+<CustomShader version="5">
+    <Parameters>
+        <Parameter name="bumpSpeedScale"      target="bumpSpeedScale"      group="base"    type="float3" defaultValue ="-1.0 -3.75 0.02 1"/>
+        <Parameter name="underwaterFogColor"  target="underwaterFogColor"  group="base"    type="float4" defaultValue ="0.15 0.103 0.13 0.11"/>
+        <Parameter name="windScale"           target="windScale"           group="base"    type="float"  defaultValue ="0.025" minValue="0" maxValue="0.05"/>
+        <Parameter name="uvScaleSpeedDistort" target="uvScaleSpeedDistort" group="flowMap" type="float4" defaultValue ="0.5 10 1.0 0.5"/>
+        <Parameter name="depthScale"          target="depthScale"          group="base"    type="float"  defaultValue ="9.0" minValue="5" maxValue="10"/>
+    </Parameters>
+    <UvUsages>
+        <UvUsage textureName="baseMap"   uvType="worldspace"/>
+        <UvUsage textureName="normalMap" uvType="worldspace"/>
+        <UvUsage textureName="glossMap"  uvType="worldspace"/>
+        <UvUsage textureName="flowMap"   uvType="uv0" uvScale="1.0"/>
+    </UvUsages>
+    <Textures>
+        <Texture name="normalMap" group="base" />
+        <!--Texture name="waterFoam" group="base" /-->
+        <Texture name = "flowMap" group="flowMap" defaultColorProfile = "linearRGB"/>
+    </Textures>
+    <VertexAttributes>
+        <VertexAttribute name="tangent" group="base"/>
+    </VertexAttributes>
+    <Variations>
+        <Variation name = "simple" groups="base">
+<![CDATA[
+    #define WATER_SIMPLE
+]]>
+        </Variation>
+        <Variation name = "flowMap" groups="base flowMap">
+<![CDATA[
+    #define FLOW_MAP
+]]>
+        </Variation>
+    </Variations>
+    <LodLevel startDistance="0" subsequentPassForceMode="ignore">
+        <CodeInjections>
+            <CodeInjection position = "FS_GLOBALS">
+<![CDATA[
+            float gZoneShift;
+            float gZoneFactor;
+            float2 gDdxTC0;
+            float2 gDdyTC0;
+            float2 gDdxTC1;
+            float2 gDdyTC1;
+            float2 gDdxTC2;
+            float2 gDdyTC2;
+            float2 gDdxTC0Pos;
+            float2 gDdyTC0Pos;
+            float2 gDdxTC0Vel;
+            float2 gDdyTC0Vel;
+]]>
+            </CodeInjection>
+            <CodeInjection position = "START_FS">
+<![CDATA[
+            // Heuristic paramaters to define the zones for water normal calculation
+            globals.gZoneShift = 5.8;       // tune this to move the zones in distance direction
+            globals.gZoneFactor = 0.7;      // tune this to make the zones wider/narrower
+            globals.gDdxTC0 = ddx(In.vs.normalMapTexCoord0);
+            globals.gDdyTC0 = ddy(In.vs.normalMapTexCoord0);
+            globals.gDdxTC1 = ddx(In.vs.normalMapTexCoord1);
+            globals.gDdyTC1 = ddy(In.vs.normalMapTexCoord1);
+            globals.gDdxTC2 = ddx(In.vs.normalMapTexCoord2);
+            globals.gDdyTC2 = ddy(In.vs.normalMapTexCoord2);
+            globals.gDdxTC0Pos = ddx(In.vs.normalMapTexCoord0Pos);
+            globals.gDdyTC0Pos = ddy(In.vs.normalMapTexCoord0Pos);
+            globals.gDdxTC0Vel = ddx(In.vs.normalMapTexCoord0Vel);
+            globals.gDdyTC0Vel = ddy(In.vs.normalMapTexCoord0Vel);
+]]>
+            </CodeInjection>
+            <CodeInjection position="LIB_FUNCTION_FS">
+<![CDATA[
+float3 getRefractionColorTex(FS_INPUT In, FS_GLOBALS globals, ObjectParameters& object, float3 specularColor, float roughness, float fresnelStrength, float3 viewDir, float3 normal, float3 tangentSpaceNormal);
+
+#if defined(FLOW_MAP)
+// flowMap code
+// assumption: sampler2D flowMap is always exists  
+float4 flowMapTex2D(FS_INPUT In, FS_GLOBALS globals, ObjectParameters& object, sampler2D anyMap){
+    // calculate time
+    // flow speed controlled via object.uvScaleSpeedDistort.z, object.uvScaleSpeedDistort.xy sensetive 
+    float mTimeA = cTime_s * object.uvScaleSpeedDistort.z;
+    float mTimeB = 0.5 + cTime_s * object.uvScaleSpeedDistort.z;
+    // load flowmap
+    float2 mFlowMap = 2.0 * tex2D( flowMap, In.vs.flowMapTexCoords).xy - 1.0; // bring it to -1..1 range 
+    // vertexColor example 
+    //float2 mFlowMap = 2.0*In.vs.vertexColor.rg - 1.0; 
+    mFlowMap *= -1;  // reverse it, otherwise dosen't work
+    mFlowMap *= object.uvScaleSpeedDistort.w; // distortion intensity, also really sensetive to object.uvScaleSpeedDistort.xyz
+    // frac it - bring it to 0..1 continuously
+    float2 mFlowMapA = mFlowMap.rg * ( mTimeA - floor( mTimeA ) );
+    float2 mFlowMapB = mFlowMap.rg * ( mTimeB - floor( mTimeB ) );
+    // defaultTexCoords scaled in vertex shader alredy 
+    float2 mUVa = mFlowMapA + In.vs.defaultTexCoords;
+    float2 mUVb = mFlowMapB + ( 2.0 + In.vs.defaultTexCoords );
+    // sample them twice 
+    float4 mMapA = tex2D(anyMap, float3(mUVa, 0)).xyzw;
+    float4 mMapB = tex2D(anyMap, float3(mUVb, 0)).xyzw;
+    // calculate time blend 
+    float mTime = abs( ( ( mTimeA - floor( mTimeA ) ) - 0.5 ) * 2.0 );
+    // lerp between samples 
+    float4 mResult = lerp( mMapA, mMapB, mTime );
+    return  mResult;
+}
+#endif
+
+float3 waterPhaseFunction(float cosTheta)
+{
+    return 3.0/16.0 * (1.0 + cosTheta*cosTheta); // Note no /pi because incattering/light has already /pi baked in
+}
+
+float getWaterDepth(FS_INPUT In, FS_GLOBALS globals, ObjectParameters& object)
+{
+    float screenDepth = In.vs.screenPosZ / In.vs.screenPosW;
+    float screenDepthLinear = convertDepthToEyeZ(screenDepth);
+    float sceneDepthLinear = getLinearSceneDepth(In, globals, object);
+    return (sceneDepthLinear - screenDepthLinear);
+}
+
+float getNormalizedWaterDepth(FS_INPUT In, FS_GLOBALS globals, ObjectParameters& object)
+{
+    return saturate(getWaterDepth(In, globals, object)*object.depthScale);
+}
+
+#if defined(ENV_MAP_SPECULAR)
+
+float3 getEnvMapTexColor(float3 normal, float3 viewDir, float mip)
+{
+    float3 finalCoord = reflect(-viewDir, normal);
+    return texCUBElod(envMap, finalCoord, mip).xyz;
+}
+
+#endif
+
+// water sampling with super sampling support (only in vertical direction)
+// sampleOffset: [-n:n] with 0 = pixel center and -1 and 1 = half way towards neighbor pixel
+float3 sampleWaterNormal(float2 texCoord, float2 texCoordDdx, float2 texCoordDdy, float sampleOffsetY)
+{
+#ifdef NORMAL_MAP
+    float2 tcOffset = sampleOffsetY * 0.5 * texCoordDdy;
+    return tex2Dgrad(normalMap, texCoord + tcOffset, texCoordDdx, texCoordDdy).xyz;
+#else
+    return float3(0,0,1);
+#endif
+}
+
+// calculate the water zone depending on the texture coordinate gradient
+float calcWaterZone(FS_GLOBALS globals, float2 ddyTexCoord)
+{
+    return log2(length(ddyTexCoord)+0.0001)*globals.gZoneFactor+globals.gZoneShift; // heuristic function
+}
+
+/*
+    Water normal calculation
+    The water region is divided into several zones depending on distance (or more precisely: depending
+    on the texture coordinate gradient). The water period is successively increased to generate
+    more water dynamics in the distance. Blending is done to reduce artifacts at the zone borders.
+    The sampling offset can be used to implement super sampling in vertical direction to remove
+    camera induced noise.
+*/
+float3 calcWaterNormalUnnormalized(FS_INPUT In, FS_GLOBALS globals, ObjectParameters& object, float sampleOffset)
+{
+#ifdef NORMAL_MAP
+
+#if defined(WATER_SIMPLE)
+    float3 t0 = sampleWaterNormal(In.vs.normalMapTexCoord0, globals.gDdxTC0, globals.gDdyTC0, sampleOffset);
+    float3 t1 = sampleWaterNormal(In.vs.normalMapTexCoord1, globals.gDdxTC1, globals.gDdyTC1, sampleOffset);
+    float3 t2 = sampleWaterNormal(In.vs.normalMapTexCoord2, globals.gDdxTC2, globals.gDdyTC2, sampleOffset);
+    float3 mResult = (t0 + t1 + t2)*2-3;
+    float windStrength = max(0.01, cShared0*object.windScale);
+    mResult = lerp(float3(0,0,1), mResult, windStrength);
+    return mResult;
+#elif defined(FLOW_MAP)
+    float3 mResult = (flowMapTex2D(In, globals, object, normalMap).xyz - 0.5);
+    float windStrength = max(0.01, object.windScale);
+    mResult = lerp(float3(0,0,1), mResult, windStrength);
+    return mResult;
+#else
+    // Every zone has an incoming wave (fades out) and an outgoing wave (fades in)
+    float3 tIn;
+    float3 tOut;
+
+    // Heuristic parameters to adjust wave size progression
+    float waveFactor = 0.6;         // global scale factor
+    float waveZoneFactor = 0.5;     // progression factor
+
+    float zone = calcWaterZone(globals, globals.gDdyTC0);
+    float zoneInt = floor(zone);
+    if (zone < 2) {
+
+        // First and second zone: the incoming wave is the near field wave[s]
+        float3 t0 = sampleWaterNormal(In.vs.normalMapTexCoord0, globals.gDdxTC0, globals.gDdyTC0, sampleOffset);
+        float3 t1 = sampleWaterNormal(In.vs.normalMapTexCoord1, globals.gDdxTC1, globals.gDdyTC1, sampleOffset);
+        float3 t2 = sampleWaterNormal(In.vs.normalMapTexCoord2, globals.gDdxTC2, globals.gDdyTC2, sampleOffset);
+        tIn = (t0 + t1 + t2)*2-3;
+    } else {
+
+        // Higher zones: generate an artificial incoming wave with longer period
+        float factor = waveFactor * pow(waveZoneFactor, zoneInt-2);
+        float velFactor = sqrt(factor);     // Heuristic formula for the velocity factor
+        float2 tcIn = In.vs.normalMapTexCoord0Pos * factor + In.vs.normalMapTexCoord0Vel * velFactor;
+
+        // Correctly calculate gradients to avoid artifacts at zone borders
+        float2 tcInDdx = globals.gDdxTC0Pos * factor + globals.gDdxTC0Vel * velFactor;
+        float2 tcInDdy = globals.gDdyTC0Pos * factor + globals.gDdyTC0Vel * velFactor;
+        tIn = sampleWaterNormal(tcIn, tcInDdx, tcInDdy, sampleOffset)*2-1;
+    }
+
+
+    // In the first zone, the near field wave is rendered alone (it is blended with itself)
+    tOut = tIn;
+    if (zone >= 1) {
+
+        // Second zone and higher: Generate an artificial outgoing wave with longer period
+        float factor = waveFactor * pow(waveZoneFactor, zoneInt-1);
+        float velFactor = sqrt(factor);     // Heuristic formula for the velocity factor
+        float2 tcOut = In.vs.normalMapTexCoord0Pos * factor + In.vs.normalMapTexCoord0Vel * velFactor;
+
+        // Correctly calculate gradients to avoid artifacts at zone borders
+        float2 tcOutDdx = globals.gDdxTC0Pos * factor + globals.gDdxTC0Vel * velFactor;
+        float2 tcOutDdy = globals.gDdyTC0Pos * factor + globals.gDdyTC0Vel * velFactor;
+        tOut = sampleWaterNormal(tcOut, tcOutDdx, tcOutDdy, sampleOffset)*2-1;
+    }
+
+    // Do blending and apply wind
+    float blend = zone - zoneInt;
+    float3 mResult = (1.0 - blend) * tIn + blend * tOut;
+    float windStrength = max(0.01, cShared0*object.windScale);
+    mResult = lerp(float3(0,0,1), mResult, windStrength);
+    return mResult;
+#endif
+
+#else
+    return float3(0,0,1);
+#endif
+}
+]]>
+            </CodeInjection>
+            <CodeInjection position="SAMPLERS">
+<![CDATA[
+    //sampler2D waterFoam;
+#if defined(FLOW_MAP)
+    sampler2D flowMap;
+#endif
+]]>
+                    </CodeInjection>
+            <CodeInjection position="SHARED_START">
+<![CDATA[
+#if defined(DIFFUSE)
+    #undef DIFFUSE
+#endif
+
+#if defined(REFRACTION_MAP) && defined(LIGHTING)
+    #define WATER_RENDERING
+#endif
+
+#if defined(WATER_SIMPLE)
+    #undef WATER_RENDERING
+    #undef REFRACTION_MAP
+    #undef REFLECTION_MAP
+#elif defined(REFLECTION_MAP)
+    #undef ENV_MAP_DIFFUSE
+    #undef ENV_MAP_SPECULAR
+#endif
+]]>
+            </CodeInjection>
+            <CodeInjection position="VS_OUTPUT">
+<![CDATA[
+float2 normalMapTexCoord0  : TEXCOORDn;
+float2 normalMapTexCoord1  : TEXCOORDn;
+float2 normalMapTexCoord2  : TEXCOORDn;
+float2 normalMapTexCoord0Pos  : TEXCOORDn;
+float2 normalMapTexCoord0Vel  : TEXCOORDn;
+
+float2 foamTexCoord        : TEXCOORDn;
+
+#if defined(FLOW_MAP)
+    float2 flowMapTexCoords : TEXCOORDn;
+#endif
+]]>
+            </CodeInjection>
+            <CodeInjection position="OBJECT_PARAMETERS">
+<![CDATA[
+    /*
+        bumpSpeedScale.xy - speed direction with intensity (unnormalized)
+        bumpSpeedScale.z  - texture Scale 
+        bumpSpeedScale.w  - not used 
+    */
+    float4 bumpSpeedScale;
+    float4 underwaterFogColor;
+    /*
+        windScale.x - normal map intensity 
+    */
+    float windScale;
+#if defined(FLOW_MAP)
+    /*
+        flowMap mesh contain 0..1 textureCoords 
+        uvScaleSpeedDistort.xy - uvScale for the normalMap
+        uvScaleSpeedDistort.z  - flow speed
+        uvScaleSpeedDistort.w  - distortion amount
+        all 4 parameters very interdependent, 
+        and they need to be adjusted in relation of the texture and uv's
+    */
+    float4 uvScaleSpeedDistort;
+#endif
+    /*
+        depthScale.x - distance in getDepthFade
+    */
+    float depthScale;
+]]>
+            </CodeInjection>
+            <CodeInjection position="POST_SET_TEXCOORDS_VS">
+<![CDATA[
+float textureScale = object.bumpSpeedScale.z;
+float2 bumpSpeedNorm = object.bumpSpeedScale.xy*textureScale;
+float2 bumpSpeedSlow = 0.5*object.bumpSpeedScale.xy*textureScale;
+
+float2 translationNorm1=float2(cTime_s*bumpSpeedNorm.x, 0);
+float2 translationNorm2=float2(translationNorm1.x, cTime_s*bumpSpeedNorm.y);
+
+float2 texCoords=In.position.xz*textureScale;
+
+Out.normalMapTexCoord0Pos = texCoords.xy;
+Out.normalMapTexCoord0Vel = translationNorm1;
+Out.normalMapTexCoord0 = Out.normalMapTexCoord0Pos+Out.normalMapTexCoord0Vel;
+Out.normalMapTexCoord1 = texCoords.xy*2.0+translationNorm1*4.0;
+Out.normalMapTexCoord2 = texCoords.xy*4.0-translationNorm2;
+
+Out.foamTexCoord = Out.normalMapTexCoord0;
+#if defined(FLOW_MAP)
+    Out.flowMapTexCoords = Out.defaultTexCoords;
+    Out.defaultTexCoords = object.uvScaleSpeedDistort.xy*10.0*Out.defaultTexCoords;
+#endif
+]]>
+            </CodeInjection>
+            <CodeInjection position="POST_DIFFUSE_COLOR_FS">
+<![CDATA[
+    diffuseColor = 0;
+]]>
+            </CodeInjection>
+            <CodeInjection position = "POST_GLOSS_COLOR_FS">
+<![CDATA[
+    roughness = 0;
+    metalness = 0;
+    bakedAO   = 1;
+    ssao = 1;
+]]>
+            </CodeInjection>
+            <CodeInjection position = "POST_MATERIAL_PROPERTIES_FS">
+<![CDATA[
+    fresnelStrength = 1.0;
+]]>
+            </CodeInjection>
+            <CodeInjection position = "GET_SPECULAR_SHADING_FS">
+<![CDATA[
+    roughness = 0.15;
+]]>
+            </CodeInjection>
+            <CodeInjection position="GET_UNNORMALIZED_TANGENT_SPACE_NORMAL_FS">
+<![CDATA[
+#if defined( NORMAL_MAP )
+    return calcWaterNormalUnnormalized(In, globals, object, 0.0);
+#endif
+]]>
+            </CodeInjection>
+            <CodeInjection position="GET_REFRACTION_COLOR_TEX_FS">
+<![CDATA[
+#if defined(WATER_RENDERING)
+{
+    float waterDepth = 2*(max(getWaterDepth(In, globals, object), 0));
+
+    float normDepth = saturate(waterDepth);
+    float2 finalCoord2 = In.vs.screenPos.xy/In.vs.screenPosW;
+    finalCoord2 += tangentSpaceNormal.xy*object.cRefractionBumpScale*normDepth;
+#if defined(FLIP_TEXCOORD_Y)
+    finalCoord2.y = 1-finalCoord2.y;
+#endif
+    float3 refractionColorTex = tex2D(refractionMap, finalCoord2).xyz;
+
+    float3 refractionColor = refractionColorTex;
+
+    #if (NUM_DIRECTIONAL_LIGHTS > 0)
+
+        float3 scatteringDirLightDirection = structBufferFetch(clusterLightsBuffer, 0).xyz;
+        float3 colorAtGround = structBufferFetch(clusterLightsBuffer, 1).xyz;
+
+        float faceNdotL = saturate(dot(In.vs.worldNormal, scatteringDirLightDirection));
+
+        // Calculate the amount of light that goes into the water (is not reflected)
+        float lightScale = 1.0 - getFresnel_Schlick(specularColor, faceNdotL, 1.0);
+
+        // underwaterFogColor defines the inscattering color when light and camera are both perpendicular to the water surface
+        // -> lightDistFactor = 1, cosTheta = 1
+        // -> Limit (1 - e^(-beta*s*2))/(beta*2) * 3/16 *2 * 3/16 *2 as s->infinity == 9/(128*beta) -> beta = 0.0703125/underwaterFogColor
+        float3 totalBeta = 0.0703125/(object.underwaterFogColor.xyz*object.underwaterFogColor.w);
+
+
+        // foam
+        //float normalizedDepth = getNormalizedWaterDepth(In, globals, object);
+        //float3 foam = tex2D(waterFoam, In.vs.foamTexCoord ).r * (1 - normalizedDepth);
+        // foam
+
+        float faceNdotV = saturate(dot(In.vs.worldNormal, viewDir));
+        // Law of sines to calculate length of light ray in the water given the length of view under the water
+        float lightDistFactor = sin(acos(1-faceNdotV)) / sin(acos(1-max(faceNdotL, 0.005)));
+
+        float depthRangeScale = 1/1.8; // scale the optical depth so that the water looks less deep
+        float3 opticalDepth = totalBeta*waterDepth * depthRangeScale;
+        float3 extinction = exp(-opticalDepth);
+
+
+        // Inscattering Integral, extiction of particle light * extinction of sun light to particle
+        // Int 0->waterDepth: e^(-beta*s) * e^(-beta*s*lightDistFactor) ds =
+        // 1 - e^(-beta*waterDepth * (lightDistFactor + 1))
+        // ---------------------------------------------
+        //    beta * (lightDistFactor + 1)
+        float3 inscattering = (1.0 - exp(-opticalDepth * (lightDistFactor+1))) / (totalBeta * (lightDistFactor+1));
+
+        float cosTheta = -dot(scatteringDirLightDirection, viewDir);
+
+        inscattering = colorAtGround * lightScale * inscattering * waterPhaseFunction(cosTheta) * waterPhaseFunction(1);
+
+        // Apply extinction of water and correct lighting (sun color would have been extincted by the water)
+        //float envMapFactor = 1-faceNdotL; // Approximate the factor of the envmap lighting by the lighting factor of an xz plane
+        //refractionColor *= extinction * (exp(-opticalDepth*lightDistFactor) * lightScale * (1-envMapFactor) + envMapFactor);
+        refractionColor *= extinction * exp(-opticalDepth*lightDistFactor) * lightScale;
+        refractionColor += inscattering;
+
+        // Blend in a bit of the unchanged refractionColor to avoid hard edges
+        refractionColor = lerp(refractionColorTex, refractionColor, saturate(normDepth*1.5));
+    #endif
+
+    return refractionColor;
+}
+#endif
+]]>
+            </CodeInjection>
+            <CodeInjection position="POST_LIGHTING_FS">
+<![CDATA[
+{
+#if defined(WATER_SIMPLE)
+    lighting *= 0.75;
+#else
+    float softIntersect = getNormalizedWaterDepth(In, globals, object);
+    lighting *= softIntersect;
+#endif
+}
+]]>
+            </CodeInjection>
+            <CodeInjection position="POST_GET_ENV_MAP_COLOR_FS">
+<![CDATA[
+#if defined(WATER_SIMPLE)
+{
+#if defined(ENV_MAP_SPECULAR)
+    #if (NUM_DIRECTIONAL_LIGHTS > 0)
+        float waterDepth = 6;
+
+        float3 scatteringDirLightDirection = structBufferFetch(clusterLightsBuffer, 0).xyz;
+        float3 colorAtGround = structBufferFetch(clusterLightsBuffer, 1).xyz;
+
+        float faceNdotL = saturate(dot(In.vs.worldNormal, scatteringDirLightDirection));
+
+        // Calculate the amount of light that goes into the water (is not reflected)
+        float lightScale = 1.0 - getFresnel_Schlick(specularColor, faceNdotL, 1.0);
+
+        float3 totalBeta = 0.0703125/(object.underwaterFogColor.xyz*object.underwaterFogColor.w);
+
+
+        float faceNdotV = saturate(dot(In.vs.worldNormal, viewDir));
+        // Law of sines to calculate length of light ray in the water given the length of view under the water
+        float lightDistFactor = sin(acos(1-faceNdotV)) / sin(acos(1-max(faceNdotL, 0.005)));
+
+        float3 opticalDepth = totalBeta*waterDepth;
+
+        float3 inscattering = (1.0 - exp(-opticalDepth * (lightDistFactor+1))) / (totalBeta * (lightDistFactor+1));
+        float cosTheta = -dot(scatteringDirLightDirection, viewDir);
+        inscattering = colorAtGround * lightScale * inscattering * waterPhaseFunction(cosTheta) * waterPhaseFunction(1);
+
+        float3 envBrdf = getEnvBRDF(specularColor, roughness, NdotV);
+        oColor += (1-envBrdf) * inscattering;
+    #endif
+#endif
+}
+#elif !defined(REFLECTION_MAP)
+
+/*
+   Env map color calculation
+   We use super sampling of the env map color in vertical direction to reduce camera induced noise.
+   The refraction texture color is excluded from super sampling, although we do super sample the
+   BRDF factor needed to calculate the final refraction contribution.
+*/
+
+#if defined(ENV_MAP_SPECULAR)
+
+    // set up transformation matrix to convert normals from tangent to world space
+    float3 tangentSpaceNormal2 = In.vs.worldNormal.xyz;
+    float3 tangentSpaceTangent = In.vs.worldTangent.xyz;
+    float3 tangentSpaceBitangent = cross(tangentSpaceNormal2, tangentSpaceTangent)*In.vs.worldTangent.w;
+    float3x3 worldToTangentSpaceMat = float3x3(tangentSpaceTangent, tangentSpaceBitangent, tangentSpaceNormal2);
+
+    float zone = calcWaterZone(globals, globals.gDdyTC0);
+
+    // Heuristic formula to define the number of super sampling points depending on zone/distance.
+    int numSamplePairs = int(clamp(floor(zone + 0.5), 0.0, 2.0));
+
+    // Calculate the env map color in the pixel center
+    roughness = getEnvMapRoughnessFromMip(0);
+    envMapSpecularColor = getEnvMapTexColor(normal, viewDir, 0);
+    float3 refractionColor = getRefractionColorTex(In, globals, object, specularColor, roughness, fresnelStrength, viewDir, normal, tangentSpaceNormal);
+
+    // Forced to float brdf (we have a grey specularColor)
+    NdotV = saturate(dot(normal, viewDir));
+    float brdfColor = getEnvBRDF(specularColor, roughness, NdotV);
+    envMapSpecularColor *= brdfColor;
+
+    if (numSamplePairs > 0) {
+        float sampleDist = 1.0 / (float)numSamplePairs;
+
+        // Calculate the env map color at additional sampling points
+        for (int i=0; i<numSamplePairs; i++) {
+            float sampleOffset = float(i+1) * sampleDist;
+            float3 normal1 = normalize(mul(calcWaterNormalUnnormalized(In, globals, object, sampleOffset), worldToTangentSpaceMat));
+            float3 normal2 = normalize(mul(calcWaterNormalUnnormalized(In, globals, object, -sampleOffset), worldToTangentSpaceMat));
+            float NdotV1 = saturate(dot(normal1, viewDir));
+            float NdotV2 = saturate(dot(normal2, viewDir));
+
+            // Forced to float brdf (we have a grey specularColor)
+            float brdfColor1 = getEnvBRDF(specularColor, roughness, NdotV1);
+            float brdfColor2 = getEnvBRDF(specularColor, roughness, NdotV2);
+
+            // We need the super sampled brdf color for applying the refraction contribution below
+            brdfColor += brdfColor1;
+            brdfColor += brdfColor2;
+            envMapSpecularColor += getEnvMapTexColor(normal1, viewDir, 0) * brdfColor1;
+            envMapSpecularColor += getEnvMapTexColor(normal2, viewDir, 0) * brdfColor2;
+        }
+    }
+    envMapSpecularColor *= (specularLightingScale * specularOcclusion);
+    envMapSpecularColor /= float(2 * numSamplePairs + 1);
+    brdfColor /= float(2 * numSamplePairs + 1);
+    float softIntersect = getNormalizedWaterDepth(In, globals, object);
+    float3 envMapColor = (envMapDiffuseColor + envMapSpecularColor) * softIntersect + refractionColor * (1-brdfColor * softIntersect);
+    return oColor + envMapColor;
+#endif
+
+#endif
+]]>
+            </CodeInjection>
+            <CodeInjection position="GET_REFRACTION_COLOR_FS">
+<![CDATA[
+// We combine the reflection and refraction in getReflectionColor/getEnvMapColor
+    return oColor;
+]]>
+            </CodeInjection>
+            <CodeInjection position="GET_REFLECTION_COLOR_FS">
+<![CDATA[
+
+/*
+   Reflection color calculation
+   We use super sampling of the reflection color in vertical direction to reduce camera induced noise.
+   The refraction texture color is excluded from super sampling, although we do super sample the
+   BRDF factor needed to calculate the final refraction contribution.
+*/
+
+#if defined(REFLECTION_MAP)
+
+    // set up transformation matrix to convert normals from tangent to world space
+    float3 tangentSpaceNormal3 = In.vs.worldNormal.xyz;
+    float3 tangentSpaceTangent = In.vs.worldTangent.xyz;
+    float3 tangentSpaceBitangent = cross(tangentSpaceNormal3, tangentSpaceTangent)*In.vs.worldTangent.w;
+    float3x3 worldToTangentSpaceMat = float3x3(tangentSpaceTangent, tangentSpaceBitangent, tangentSpaceNormal3);
+
+    float zone = calcWaterZone(globals, globals.gDdyTC0);
+
+    // Heuristic formula to define the number of super sampling points depending on zone/distance.
+    int numSamplePairs = int(clamp(floor(zone + 0.5), 0.0, 2.0));
+
+    // Calculate the reflection color in the pixel center
+    reflectionColor = getReflectionColorTex(In, globals, object, normal, tangentSpaceNormal, viewDir, roughness, fresnelStrength);
+    float3 refractionColor = getRefractionColorTex(In, globals, object, specularColor, roughness, fresnelStrength, viewDir, normal, tangentSpaceNormal);
+
+    // Forced to float brdf (we have a grey specularColor)
+    float brdfColor = getReflectionColorBRDF(In, globals, object, specularColor, roughness, fresnelStrength, viewDir, normal);
+    reflectionColor *= brdfColor;
+    if (numSamplePairs > 0) {
+        float sampleDist = 1.0 / (float)numSamplePairs;
+
+        // Calculate the reflection color at additional sampling points
+        for (int i=0; i<numSamplePairs; i++) {
+            float sampleOffset = (i+1) * sampleDist;
+            float3 tangentSpaceNormal1 = calcWaterNormalUnnormalized(In, globals, object, sampleOffset);
+            float3 tangentSpaceNormal2 = calcWaterNormalUnnormalized(In, globals, object, -sampleOffset);
+            float3 normal1 = normalize(mul(tangentSpaceNormal1, worldToTangentSpaceMat));
+            float3 normal2 = normalize(mul(tangentSpaceNormal2, worldToTangentSpaceMat));
+
+            // Forced to float brdf (we have a grey specularColor)
+            float brdfColor1 = getReflectionColorBRDF(In, globals, object, specularColor, roughness, fresnelStrength, viewDir, normal1);
+            float brdfColor2 = getReflectionColorBRDF(In, globals, object, specularColor, roughness, fresnelStrength, viewDir, normal2);
+
+            // We need the super sampled brdf color for applying the refraction contribution below
+            brdfColor += brdfColor1;
+            brdfColor += brdfColor2;
+            reflectionColor += getReflectionColorTex(In, globals, object, normal, tangentSpaceNormal1, viewDir, roughness, fresnelStrength) * brdfColor1;
+            reflectionColor += getReflectionColorTex(In, globals, object, normal, tangentSpaceNormal2, viewDir, roughness, fresnelStrength) * brdfColor2;
+        }
+    }
+    reflectionColor /= (2 * numSamplePairs + 1);
+    brdfColor /= (2 * numSamplePairs + 1);
+    float softIntersect = getNormalizedWaterDepth(In, globals, object);
+    reflectionColor = reflectionColor * softIntersect * reflectionFactor + refractionColor * (1-brdfColor * softIntersect);
+    return oColor + reflectionColor;
+#endif
+]]>
+            </CodeInjection>
+            <CodeInjection position="FINAL_POS_FS">
+<![CDATA[
+#if defined(WATER_RENDERING)
+{
+        float3 totalBeta = 0.5/(object.underwaterFogColor.xyz*object.underwaterFogColor.w);
+    //oColor.xyz *= 0.001;
+    //Color.xyz += rayleighPhaseFunction(3.1415, totalBeta, 0.7)-1;
+}
+#endif
+]]>
+            </CodeInjection>
+        </CodeInjections>
+    </LodLevel>
+</CustomShader>
