@@ -106,33 +106,14 @@ function READirt:update(dt)
 	-----------------------------------------
 	-- Start handling of lowspots and water level
 	if LowSpot.LowspotScanCompleted then
-		-- Read wetness
-		local Wetness = g_currentMission.environment.weather:getGroundWetness();
-
+		-------------------------------------
 		-- Debug active
 		if LowSpot.DebugActive then
-			if READirt.DumpDone == nil and false then
-				READirt:deepdump(WeatherType);
-				READirt.DumpDone = true;
-			end;
-			if LowSpot.DebugTestWaterActive then
-				-- Initialze debug wetness
-				if LowSpot.DebugWet == nil then
-					LowSpot.DebugWet = 0;
-				end;
-				-- Loop wetness
-				LowSpot.DebugWet = dt/20000 + LowSpot.DebugWet;
-				--Restart wetness
-				if LowSpot.DebugWet > 1 then
-					LowSpot.DebugWet = 0;
-				end;
-				Wetness = LowSpot.DebugWet;
-				renderText(0.2, 0.10, 0.03,"Debug wetness: " .. LowSpot.DebugWet);
-			end;
 			-- Get number of lowspots
 			local DebugNumLowSpots = table.getn(WheelsUtil.LowspotRootNode);
 			-- Render wetness status
 			local TemperatureDryFactor = MathUtil.clamp(g_currentMission.environment.weather:getCurrentTemperature() / 10, 0, 1);
+			renderText(0.2, 0.10, 0.03,"WaterLevel: " .. LowSpot.CurrentWaterLevel);
 			renderText(0.2, 0.15, 0.03,"Temperature dry factor: " .. TemperatureDryFactor);
 			renderText(0.2, 0.25, 0.03,"Current temperature: " .. g_currentMission.environment.weather:getCurrentTemperature());
 			renderText(0.2, 0.30, 0.03,"Level change: " .. READirt:GetLevelChange(WaterLevelChange.RatePerHour,dt));
@@ -166,43 +147,19 @@ function READirt:update(dt)
 			end;
 		end;
 
-		-- Update lowspot timer
-		-- Current lowspot to update
+		-------------------------------------
+		-- Update water level, Current lowspot to update
 		local ActLowSpot = READirt.LastUpdatedLowspot + 1;
-		-- Read current time
-		local currentTime = g_currentMission.environment.dayTime;
-		-- Max allowed depth of current lowspot
-		local MaxWaterDepth = WheelsUtil.LowspotMaxDepth[ActLowSpot];
-		-- Update water level, use ground wetness if it is the fist scan
-		local NewWaterLevel = 0;
-		if LowSpot.LowspotLastUpdateTime[ActLowSpot] == nil then
-			if Wetness > 0 then
-				NewWaterLevel = math.min(Wetness * MaxWaterDepth, MaxWaterDepth);
-			else
-				NewWaterLevel = MinWaterDepth;
-			end;
-		else
-			-- Get in game time differance since last update
-			local TimeDiff = math.max(0,currentTime - LowSpot.LowspotLastUpdateTime[ActLowSpot]);
-			-- Get current water level
-			local _,CurrentWaterLevel,_ = getTranslation(WheelsUtil.LowspotWaterLevelNode[ActLowSpot]);
-			-- Level change
-			local LevelChange = READirt:GetLevelChange(WaterLevelChange.RatePerHour,TimeDiff);
-			-- First levelchange 
-			if CurrentWaterLevel < MinWaterDepth*0.5 and LevelChange > 0 then
-				CurrentWaterLevel = 0;
-			end;
-			-- New water level
-			NewWaterLevel = MathUtil.clamp(CurrentWaterLevel + LevelChange, MinWaterDepth, MaxWaterDepth);
-			-- Make lowspot invisible
-			if NewWaterLevel < 0 then
-				NewWaterLevel = MinWaterDepth;
-			end;
+		-- Get water level factor
+		local WaterLevelFactor = 0;
+		WaterLevelFactor,LowSpot.LastUpdateTime,LowSpot.CurrentWaterLevel = READirt:GetWaterLevelFactor(WaterLevelChange.RatePerHour,MaxScanWaterDepth,LowSpot.LastUpdateTime,LowSpot.CurrentWaterLevel);
+		-- Calculate new water level
+		local NewWaterLevel = MinWaterDepth;
+		if WaterLevelFactor > 0.05 then
+			NewWaterLevel = MathUtil.clamp(WheelsUtil.LowspotMaxDepth[ActLowSpot] * WaterLevelFactor, 0, WheelsUtil.LowspotMaxDepth[ActLowSpot]);
 		end;
 		-- Set water level of lowspot
 		setTranslation(WheelsUtil.LowspotWaterLevelNode[ActLowSpot], 0, NewWaterLevel, 0);
-		-- Save time to use next scan
-		LowSpot.LowspotLastUpdateTime[ActLowSpot] = currentTime;
 		-- Save last updated lowspot
 		if ActLowSpot >= table.getn(WheelsUtil.LowspotRootNode) then
 			READirt.LastUpdatedLowspot = 0;
@@ -579,6 +536,26 @@ end
 
 
 -----------------------------------------------------------------------------------	
+-- Get weather typ
+-----------------------------------------------------------------------------------
+function READirt:GetWaterLevelFactor(RatePerHour,MaxWaterLevel,LastUpdateTime,CurrentWaterLevel)
+	-- Read current time
+	local currentTime = g_currentMission.environment.dayTime;
+	-- Get in game time differance since last update
+	local TimeDiff = math.max(0,currentTime - LastUpdateTime);
+	-- Level change
+	local LevelChange = 0;
+	if TimeDiff > 0 and LastUpdateTime ~= 0 then
+		LevelChange = READirt:GetLevelChange(RatePerHour,TimeDiff);
+	end;
+	-- New water level
+	local NewCurrentWaterLevel = MathUtil.clamp(CurrentWaterLevel + LevelChange, 0, MaxWaterLevel);
+	-- Return water level factor
+	return MathUtil.clamp(NewCurrentWaterLevel / MaxWaterLevel, 0, 1),currentTime,NewCurrentWaterLevel;
+end
+
+
+-----------------------------------------------------------------------------------	
 -- Function to round value, delete decimals
 -----------------------------------------------------------------------------------
 function READirt:RoundValue(x)
@@ -626,12 +603,56 @@ function READirt:deepdump(tbl)
 end
 
 
+-----------------------------------------------------------------------------------	
+-- Load ground wetness  
+-----------------------------------------------------------------------------------
+function READirt.loadedMission(mission, node)
+    if mission:getIsServer() then
+        if mission.missionInfo.savegameDirectory ~= nil and fileExists(mission.missionInfo.savegameDirectory .. "/READirt.xml") then
+            local xmlFile = XMLFile.load("READirtXML", mission.missionInfo.savegameDirectory .. "/READirt.xml")
+            if xmlFile ~= nil then
+				LowSpot.CurrentWaterLevel = xmlFile:getFloat("READirt.CurrentWaterLevel", LowSpot.CurrentWaterLevel)
+				print("------------------------------------")
+				print("REA Dynamic")
+				print("loaded current water level from XML")
+				print("File: " .. mission.missionInfo.savegameDirectory .. "/READirt.xml")
+				print("Value: " .. LowSpot.CurrentWaterLevel)
+				print("------------------------------------")
+                xmlFile:delete()
+            end
+        end
+    end
+    if mission.cancelLoading then
+        return
+    end
+end
+
+
+-----------------------------------------------------------------------------------	
+-- Save ground wetness  
+-----------------------------------------------------------------------------------
+function READirt.saveToXMLFile(missionInfo)
+    if missionInfo.isValid then
+        local xmlFile = XMLFile.create("READirtXML", missionInfo.savegameDirectory .. "/READirt.xml", "READirt")
+        if xmlFile ~= nil then
+			xmlFile:setFloat("READirt.CurrentWaterLevel", LowSpot.CurrentWaterLevel)
+            xmlFile:save()
+            xmlFile:delete()
+        end
+    end
+end
+
+
 if READirt.ModActivated == nil then
 	addModEventListener(READirt);
 	READirt.ModActivated = true;
 	print("REA Dynamic dirt mod activated")
 
 	LowSpot = {};
+
+	-- Connect saving and loading functions
+    Mission00.loadMission00Finished = Utils.appendedFunction(Mission00.loadMission00Finished, READirt.loadedMission);
+    FSCareerMissionInfo.saveToXMLFile = Utils.appendedFunction(FSCareerMissionInfo.saveToXMLFile, READirt.saveToXMLFile);
 
 	-- Declare variables for low spots
 	LowSpot.FilePath = g_currentModDirectory;
@@ -641,8 +662,8 @@ if READirt.ModActivated == nil then
 	LowSpot.LowspotWaterLevelNode = {};
 	LowSpot.LowspotMaxDepth = {};
 	LowSpot.LowspotSize = {};
-	LowSpot.LowspotLastUpdateTime = {};
-	LowSpot.GroundWetnessLastScan = 0;
+	LowSpot.LastUpdateTime = 0;
+	LowSpot.CurrentWaterLevel = 0;
 	LowSpot.CurrentScanX = 0;
 	LowSpot.CurrentScanZ = 0;
 	LowSpot.CurrentScanTime = 0;
@@ -650,8 +671,6 @@ if READirt.ModActivated == nil then
 	LowSpot.ScanActive = false;
 	LowSpot.ScanCompleted = false;
 	LowSpot.DebugActive = false;
-	LowSpot.DebugTestWaterActive = false;
-
 end;
 
 
