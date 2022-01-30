@@ -17,6 +17,10 @@ This mod creates puddles in low places where water will fill up if ground is wet
 Water does not use ground wetness to set water level.
 Rain now increase level.
 Cloudy and sunny weathers lowers water level, lower temperatures decrease speed.
+
+1.1.0.1
+Water level is saved to avoid restart of water level after loading of game.
+
 ]]>
 </en>
 <de>

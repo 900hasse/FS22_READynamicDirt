@@ -498,7 +498,7 @@ end
 
 
 -----------------------------------------------------------------------------------	
--- Get weather typ
+-- Get weather type
 -----------------------------------------------------------------------------------
 function READirt:GetWeatherType()
 	local ActiveWeatherType = WeatherType.SUN;
@@ -513,7 +513,7 @@ end
 
 
 -----------------------------------------------------------------------------------	
--- Get weather typ
+-- Get level change
 -----------------------------------------------------------------------------------
 function READirt:GetLevelChange(RatePerHour,ElapsedTimeMS)
 	-- Get rate per hour for current weather
@@ -536,7 +536,7 @@ end
 
 
 -----------------------------------------------------------------------------------	
--- Get weather typ
+-- Get water level factor
 -----------------------------------------------------------------------------------
 function READirt:GetWaterLevelFactor(RatePerHour,MaxWaterLevel,LastUpdateTime,CurrentWaterLevel)
 	-- Read current time
@@ -613,7 +613,7 @@ function READirt.loadedMission(mission, node)
             if xmlFile ~= nil then
 				LowSpot.CurrentWaterLevel = xmlFile:getFloat("READirt.CurrentWaterLevel", LowSpot.CurrentWaterLevel)
 				print("------------------------------------")
-				print("REA Dynamic")
+				print("REA Dynamic Dirt")
 				print("loaded current water level from XML")
 				print("File: " .. mission.missionInfo.savegameDirectory .. "/READirt.xml")
 				print("Value: " .. LowSpot.CurrentWaterLevel)
