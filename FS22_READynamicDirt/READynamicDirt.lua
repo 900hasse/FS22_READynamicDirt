@@ -424,11 +424,6 @@ function READirt:GetIsLowSpots(wX,wY,wZ,SearchSquare,MinWaterDepth,MaxWaterDepth
 		local WaterRootNode = g_i3DManager:loadSharedI3DFile(LowSpot.FilePath .. FileName, false, false, false);
 		local WaterLevelNode = getChildAt(WaterRootNode, 0)
 
-		-- Load I3D for ice
-		local FileName = "ice.i3d";
-		local IceRootNode = g_i3DManager:loadSharedI3DFile(LowSpot.FilePath .. FileName, false, false, false);
-		local IceLevelNode = getChildAt(IceRootNode, 0)
-
 		-- If Debug active print found low spots
 		if LowSpot.DebugActive then
 			print("------------------------------------");

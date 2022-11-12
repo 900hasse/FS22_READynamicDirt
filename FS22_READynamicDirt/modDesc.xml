@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8" standalone="no" ?>
-<modDesc descVersion="61">
+<modDesc descVersion="71">
     <author>900Hasse</author>
 	<version>1.1.0.1</version>
 	<title>
@@ -20,7 +20,6 @@ Cloudy and sunny weathers lowers water level, lower temperatures decrease speed.
 
 1.1.0.1
 Water level is saved to avoid restart of water level after loading of game.
-
 ]]>
 </en>
 <de>
@@ -28,15 +27,17 @@ Water level is saved to avoid restart of water level after loading of game.
 Das Ziel ist es, den Mod universell zu machen.
 Dieser Mod unterstützt Multiplayer und dedizierte Server.
 
-Dieser Mod erzeugt Pfützen an niedrigen Stellen, an denen sich Wasser füllt, wenn der Boden nass ist.]]>
-</de>
-<fr>
-<![CDATA[The goal of this mod is to make the game feel more realistic.
-The goal is to make the mod universal.
-This mod supports multiplayer and dedicated servers.
+Dieser Mod erzeugt Pfützen an niedrigen Stellen, an denen sich Wasser füllt, wenn der Boden nass ist.
 
-This mod creates puddles in low places where water will fill up if ground is wet.]]>
-</fr>
+1.1.0.0
+Wasser verwendet keine Bodennässe, um den Wasserstand einzustellen.
+Regen erhöht jetzt das Niveau.
+Bewölktes und sonniges Wetter senkt den Wasserstand, niedrigere Temperaturen verringern die Geschwindigkeit.
+
+1.1.0.1
+Der Wasserstand wird gespeichert, um einen Neustart des Wasserstands nach dem Laden des Spiels zu vermeiden.
+]]>
+</de>
     </description>
 	<l10n>
 	</l10n>
