@@ -2,12 +2,12 @@
 
 <i3D name="untitled" version="1.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://i3d.giants.ch/schema/i3d-1.6.xsd">
   <Asset>
-    <Export program="GIANTS Editor 64bit" version="9.0.1"/>
+    <Export program="GIANTS Editor 64bit" version="9.0.3"/>
   </Asset>
 
   <Files>
+    <File fileId="2" filename="$data/maps/mapUS/textures/water_normal.dds"/>
     <File fileId="3" filename="Dirt.xml"/>
-    <File fileId="2" filename="water_normal.dds"/>
   </Files>
 
 

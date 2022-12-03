@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8" standalone="no" ?>
-<modDesc descVersion="71">
+<modDesc descVersion="72">
     <author>900Hasse</author>
-	<version>1.1.0.1</version>
+	<version>1.1.0.2</version>
 	<title>
         <en>REA22 Dynamic Dirt</en>
     </title>
@@ -13,29 +13,35 @@ This mod supports multiplayer and dedicated servers.
 
 This mod creates puddles in low places where water will fill up if ground is wet.
 
-1.1.0.0
-Water does not use ground wetness to set water level.
-Rain now increase level.
-Cloudy and sunny weathers lowers water level, lower temperatures decrease speed.
+Changelog 1.1.0.0:
+- Water does not use ground wetness to set water level.
+- Rain now increase level.
+- Cloudy and sunny weathers lowers water level, lower temperatures decrease speed.
 
-1.1.0.1
-Water level is saved to avoid restart of water level after loading of game.
+Changelog 1.1.0.1:
+- Water level is saved to avoid restart of water level after loading of game.
+
+Changelog 1.1.0.2
+- Water puddle texture is deleted from mod file and the mod now uses the on in the game folder.
 ]]>
 </en>
 <de>
-<![CDATA[Das Ziel dieses Mods ist es, das Spiel realistischer wirken zu lassen.
-Das Ziel ist es, den Mod universell zu machen.
+<![CDATA[Das Ziel dieses Mods ist es, das Spiel realistischer zu gestalten.
+Das Ziel ist es, die Mod universell zu machen.
 Dieser Mod unterstützt Multiplayer und dedizierte Server.
 
-Dieser Mod erzeugt Pfützen an niedrigen Stellen, an denen sich Wasser füllt, wenn der Boden nass ist.
+Dieser Mod erzeugt Pfützen an niedrigen Stellen, in denen sich das Wasser füllt, wenn der Boden nass ist.
 
-1.1.0.0
-Wasser verwendet keine Bodennässe, um den Wasserstand einzustellen.
-Regen erhöht jetzt das Niveau.
-Bewölktes und sonniges Wetter senkt den Wasserstand, niedrigere Temperaturen verringern die Geschwindigkeit.
+Changelog 1.1.0.0:
+- Der Wasserstand wird nicht mehr über die Bodenfeuchtigkeit bestimmt.
+- Regen erhöht jetzt den Pegel.
+- Bewölktes und sonniges Wetter senkt den Wasserstand, niedrigere Temperaturen verringern die Geschwindigkeit.
 
-1.1.0.1
-Der Wasserstand wird gespeichert, um einen Neustart des Wasserstands nach dem Laden des Spiels zu vermeiden.
+Changelog 1.1.0.1:
+- Der Wasserstand wird gespeichert, um einen Neustart des Wasserstands nach dem Laden des Spiels zu vermeiden.
+
+Changelog 1.1.0.2
+- Die Textur der Wasserpfütze wurde aus der Mod-Datei gelöscht und der Mod verwendet jetzt die im Spielordner.
 ]]>
 </de>
     </description>
